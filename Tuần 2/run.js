@@ -106,4 +106,4 @@ console.log(`Độ dài hàng đợi trung bình: ${results.avgQueueLength.toFix
 console.log(`Độ dài hàng đợi lớn nhất: ${results.maxQueueLength}`);
 console.log(`Mức độ sử dụng tối ưu nhân sự: ${results.utilization.toFixed(2)}%`);
 
-// node file.js [interarrival] [service] [customers]
+// node run.js [interarrival] [service] [customers]

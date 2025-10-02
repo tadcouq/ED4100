@@ -1,27 +1,29 @@
 const readline = require('readline');
 
+// Hàm sinh biến ngẫu nhiên phân phối mũ
 function exponential(rate) {
   return -Math.log(1 - Math.random()) / rate;
 }
 
+// Mô phỏng hệ thống xếp hàng
 function simulateQueue(meanInterarrival, meanService, numCustomers) {
   const arrivalRate = 1 / meanInterarrival;
   const serviceRate = 1 / meanService;
 
-  // Generate arrival times
+  // Sinh thời điểm đến của khách hàng
   let arrivalTimes = [0];
   for (let i = 1; i < numCustomers; i++) {
     const interarrival = exponential(arrivalRate);
     arrivalTimes.push(arrivalTimes[arrivalTimes.length - 1] + interarrival);
   }
 
-  // Generate service times
+  // Sinh thời gian phục vụ cho từng khách hàng
   let serviceTimes = [];
   for (let i = 0; i < numCustomers; i++) {
     serviceTimes.push(exponential(serviceRate));
   }
 
-  // Compute start and departure times
+  // Tính thời điểm bắt đầu phục vụ và thời điểm rời khỏi hệ thống
   let startTimes = new Array(numCustomers).fill(0);
   let departureTimes = new Array(numCustomers).fill(0);
 
@@ -33,31 +35,31 @@ function simulateQueue(meanInterarrival, meanService, numCustomers) {
     departureTimes[i] = startTimes[i] + serviceTimes[i];
   }
 
-  // Wait times
+  // Tính thời gian chờ của từng khách hàng
   let waitTimes = [];
   for (let i = 0; i < numCustomers; i++) {
     waitTimes.push(startTimes[i] - arrivalTimes[i]);
   }
   const avgWaitTime = waitTimes.reduce((a, b) => a + b, 0) / numCustomers || 0;
 
-  // Total time
+  // Tổng thời gian hoạt động của hệ thống
   const totalTime = departureTimes[departureTimes.length - 1] || 0;
 
-  // Utilization
+  // Tính mức độ sử dụng của máy chủ
   const totalServiceTime = serviceTimes.reduce((a, b) => a + b, 0);
   const utilization = totalTime > 0 ? (totalServiceTime / totalTime) * 100 : 0;
 
-  // Avg nis
+  // Tính số khách trung bình trong hệ thống
   let sumTimeInSystem = 0;
   for (let i = 0; i < numCustomers; i++) {
     sumTimeInSystem += departureTimes[i] - arrivalTimes[i];
   }
   const avgNis = totalTime > 0 ? sumTimeInSystem / totalTime : 0;
 
-  // Avg queue length
+  // Tính độ dài hàng đợi trung bình
   const avgQueueLength = totalTime > 0 ? avgNis - (totalServiceTime / totalTime) : 0;
 
-  // Max queue length
+  // Tính độ dài hàng đợi lớn nhất
   let events = [];
   for (let i = 0; i < numCustomers; i++) {
     events.push({time: arrivalTimes[i], type: 'a'});
@@ -87,7 +89,7 @@ function simulateQueue(meanInterarrival, meanService, numCustomers) {
   };
 }
 
-// Parse command line arguments or use defaults
+// Đọc tham số từ dòng lệnh hoặc dùng giá trị mặc định
 let meanInterarrival = 3;
 let meanService = 5;
 let numCustomers = 2000;
@@ -97,11 +99,11 @@ if (args.length >= 1) meanInterarrival = parseFloat(args[0]);
 if (args.length >= 2) meanService = parseFloat(args[1]);
 if (args.length >= 3) numCustomers = parseInt(args[2]);
 
-// Run simulation
+// Chạy mô phỏng
 const results = simulateQueue(meanInterarrival, meanService, numCustomers);
-console.log(`Average wait time: ${results.avgWaitTime.toFixed(2)} minutes`);
-console.log(`Average queue length: ${results.avgQueueLength.toFixed(2)}`);
-console.log(`Max queue length: ${results.maxQueueLength}`);
-console.log(`Server utilization: ${results.utilization.toFixed(2)}%`);
+console.log(`Thời gian chờ trung bình: ${results.avgWaitTime.toFixed(2)} phút`);
+console.log(`Độ dài hàng đợi trung bình: ${results.avgQueueLength.toFixed(2)}`);
+console.log(`Độ dài hàng đợi lớn nhất: ${results.maxQueueLength}`);
+console.log(`Mức độ sử dụng tối ưu nhân sự: ${results.utilization.toFixed(2)}%`);
 
 // node file.js [interarrival] [service] [customers]

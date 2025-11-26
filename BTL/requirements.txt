@@ -2,3 +2,6 @@ streamlit
 simpy
 numpy
 plotly
+networkx
+pandas
+

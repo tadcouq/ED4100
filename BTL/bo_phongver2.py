@@ -6,376 +6,318 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import networkx as nx
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 
 # ==========================================
 # 0. CẤU HÌNH & HÀM TIỆN ÍCH
 # ==========================================
-st.set_page_config(page_title="Digital Twin Park V2", layout="wide")
+st.set_page_config(page_title="Digital Twin Park V4 (Heatmap)", layout="wide")
 
-# Hàm chuyển đổi giờ (HH:MM) sang phút mô phỏng (int)
 def time_to_min(time_obj, start_time_obj):
     delta = datetime.combine(datetime.today(), time_obj) - datetime.combine(datetime.today(), start_time_obj)
     return int(delta.total_seconds() / 60)
 
-# Hàm chuyển ngược phút sang giờ string
 def min_to_time_str(minutes, start_time_obj):
     new_time = datetime.combine(datetime.today(), start_time_obj) + timedelta(minutes=minutes)
     return new_time.strftime("%H:%M")
 
 # ==========================================
-# 1. INPUT MODULE (SIDEBAR & CONFIG)
+# 1. INPUT MODULE
 # ==========================================
-st.title("🎡 Digital Twin V2: Advanced Flow & Network Simulation")
+st.title("🔥 Digital Twin V4: Timeline Heatmap Simulation")
 st.markdown("---")
 
 with st.sidebar:
-    st.header("⚙️ Cấu hình Vận hành")
+    st.header("⚙️ 1. Cấu hình Vận hành")
     
-    # 1.1 Thời gian & Sức chứa
     col_t1, col_t2 = st.columns(2)
     OPEN_TIME = col_t1.time_input("Giờ Mở cửa", value=datetime.strptime("08:00", "%H:%M").time())
     CLOSE_TIME = col_t2.time_input("Giờ Đóng cửa", value=datetime.strptime("18:00", "%H:%M").time())
     
-    # Tính tổng thời gian vận hành
     dummy_date = datetime.today()
-    t1 = datetime.combine(dummy_date, OPEN_TIME)
-    t2 = datetime.combine(dummy_date, CLOSE_TIME)
-    TOTAL_MINUTES = int((t2 - t1).total_seconds() / 60)
+    TOTAL_MINUTES = int((datetime.combine(dummy_date, CLOSE_TIME) - datetime.combine(dummy_date, OPEN_TIME)).total_seconds() / 60)
     
-    STOP_ENTRY_MINUTES = st.number_input("Ngưng nhận khách trước đóng cửa (phút)", value=90)
+    STOP_ENTRY_MINUTES = st.number_input("Chặn khách trước đóng cửa (phút)", value=60)
     AVG_DWELL_TIME = st.number_input("Thời gian lưu trú TB (phút)", value=180)
     PARK_CAPACITY = st.number_input("Sức chứa Công viên", value=3000)
     TOTAL_VISITORS = st.number_input("Tổng khách dự kiến", value=2000)
 
     st.markdown("---")
-    st.header("🎫 Vé & Hành vi")
+    st.header("🎫 2. Vé & Cổng")
     
-    # 1.2 Vé Combo vs Lẻ
     col_v1, col_v2 = st.columns(2)
-    RATIO_COMBO = col_v1.slider("Tỷ lệ Vé Combo (%)", 0, 100, 40, help="Đã bao gồm dịch vụ")
+    RATIO_COMBO = col_v1.slider("Tỷ lệ Vé Combo (%)", 0, 100, 40)
     RATIO_SINGLE = 100 - RATIO_COMBO
     col_v2.info(f"Vé Lẻ: {RATIO_SINGLE}%")
     
-    TICKET_PRICE_COMBO = st.number_input("Giá Vé Combo (VNĐ)", value=500000)
-    TICKET_PRICE_ENTRY = st.number_input("Giá Vé Cổng (cho khách lẻ)", value=100000)
+    TICKET_PRICE_COMBO = st.number_input("Giá Vé Combo", value=500000)
+    TICKET_PRICE_ENTRY = st.number_input("Giá Vé Cổng", value=100000)
 
-# --- MAIN AREA: CẤU HÌNH KHU DỊCH VỤ ĐỘNG ---
-st.subheader("🛠️ Cấu hình Các Khu Dịch vụ (Service Nodes)")
-st.info("💡 Bạn có thể thêm/sửa/xóa các khu vui chơi ngay tại bảng dưới đây.")
+    st.subheader("Phân luồng Check-in")
+    col_g1, col_g2, col_g3 = st.columns(3)
+    GATE_QR_PCT = col_g1.number_input("% QR Code", value=50)
+    GATE_BOOKING_PCT = col_g2.number_input("% Booking", value=30)
+    GATE_WALKIN_PCT = col_g3.number_input("% Tại quầy", value=20)
 
-# Dữ liệu mặc định
-default_nodes = [
-    {"Tên Khu": "Tàu lượn", "Loại": "Trò chơi", "Nhân viên": 3, "Tốc độ (phút)": 5, "Sức chứa hàng đợi": 50, "Giá/Chi tiêu (VNĐ)": 50000, "Tỷ lệ quay lại (%)": 10},
-    {"Tên Khu": "Nhà hàng", "Loại": "Ăn uống", "Nhân viên": 5, "Tốc độ (phút)": 30, "Sức chứa hàng đợi": 100, "Giá/Chi tiêu (VNĐ)": 150000, "Tỷ lệ quay lại (%)": 5},
-    {"Tên Khu": "Đu quay", "Loại": "Trò chơi", "Nhân viên": 2, "Tốc độ (phút)": 8, "Sức chứa hàng đợi": 30, "Giá/Chi tiêu (VNĐ)": 30000, "Tỷ lệ quay lại (%)": 15},
-]
+# --- MAIN AREA ---
+st.subheader("🛠️ 3. Cấu hình Khu vực (Bao gồm Khu Thăm quan)")
 
-edited_nodes_df = st.data_editor(pd.DataFrame(default_nodes), num_rows="dynamic", use_container_width=True)
+col_main1, col_main2 = st.columns([2, 1])
+
+with col_main1:
+    st.info("💡 Đã thêm 'Quảng trường' và 'Vườn hoa' để ghi nhận khách thăm quan.")
+    # Dữ liệu mặc định ĐÃ CẬP NHẬT thêm khu Cảnh quan
+    default_nodes = [
+        {"Tên Khu": "Tàu lượn", "Loại": "Trò chơi", "Nhân viên": 3, "Tốc độ (phút)": 5, "Sức chứa hàng đợi": 50, "Giá/Chi tiêu (VNĐ)": 50000, "Tỷ lệ quay lại (%)": 10, "Tỷ lệ hỏng (%)": 1.0, "TG Sửa (phút)": 30},
+        {"Tên Khu": "Nhà hàng", "Loại": "Ăn uống", "Nhân viên": 5, "Tốc độ (phút)": 30, "Sức chứa hàng đợi": 100, "Giá/Chi tiêu (VNĐ)": 150000, "Tỷ lệ quay lại (%)": 5, "Tỷ lệ hỏng (%)": 0.0, "TG Sửa (phút)": 0},
+        {"Tên Khu": "Đu quay", "Loại": "Trò chơi", "Nhân viên": 2, "Tốc độ (phút)": 8, "Sức chứa hàng đợi": 30, "Giá/Chi tiêu (VNĐ)": 30000, "Tỷ lệ quay lại (%)": 15, "Tỷ lệ hỏng (%)": 0.5, "TG Sửa (phút)": 20},
+        # --- KHU VỰC THĂM QUAN (PASSIVE NODES) ---
+        {"Tên Khu": "Quảng trường", "Loại": "Cảnh quan", "Nhân viên": 100, "Tốc độ (phút)": 15, "Sức chứa hàng đợi": 1000, "Giá/Chi tiêu (VNĐ)": 0, "Tỷ lệ quay lại (%)": 0, "Tỷ lệ hỏng (%)": 0.0, "TG Sửa (phút)": 0},
+        {"Tên Khu": "Vườn hoa", "Loại": "Cảnh quan", "Nhân viên": 100, "Tốc độ (phút)": 20, "Sức chứa hàng đợi": 1000, "Giá/Chi tiêu (VNĐ)": 0, "Tỷ lệ quay lại (%)": 0, "Tỷ lệ hỏng (%)": 0.0, "TG Sửa (phút)": 0},
+    ]
+    edited_nodes_df = st.data_editor(pd.DataFrame(default_nodes), num_rows="dynamic", use_container_width=True)
+
+with col_main2:
+    st.write("**Lịch trình Khách đoàn**")
+    default_tours = [
+        {"Giờ đến": time(9, 0), "Số lượng": 45, "Loại đoàn": "Học sinh"},
+        {"Giờ đến": time(14, 30), "Số lượng": 30, "Loại đoàn": "VIP"},
+    ]
+    edited_tours_df = st.data_editor(
+        pd.DataFrame(default_tours),
+        num_rows="dynamic",
+        column_config={"Giờ đến": st.column_config.TimeColumn("Giờ đến", format="HH:mm")},
+        use_container_width=True
+    )
 
 # ==========================================
-# 2. SIMULATION ENGINE (CORE LOGIC)
+# 2. SIMULATION ENGINE
 # ==========================================
 
 class ServiceNode:
-    """Đại diện cho một khu vui chơi/dịch vụ"""
     def __init__(self, env, name, config):
         self.env = env
         self.name = name
-        self.resource = simpy.Resource(env, capacity=int(config["Nhân viên"]))
+        # Nếu là khu cảnh quan, capacity lớn để không bao giờ tắc
+        cap = int(config["Nhân viên"])
+        if config["Loại"] == "Cảnh quan": cap = 9999
+            
+        self.resource = simpy.Resource(env, capacity=cap)
         self.service_time = config["Tốc độ (phút)"]
         self.queue_cap = config["Sức chứa hàng đợi"]
         self.price = config["Giá/Chi tiêu (VNĐ)"]
         self.rebuy_prob = config["Tỷ lệ quay lại (%)"] / 100.0
+        self.failure_rate = config["Tỷ lệ hỏng (%)"]
+        self.mttr = config["TG Sửa (phút)"]
+        
         self.revenue = 0
         self.visits = 0
+        self.breakdown_count = 0
+        
+        if self.failure_rate > 0:
+            self.env.process(self.breakdown_control())
+
+    def breakdown_control(self):
+        while True:
+            if self.failure_rate > 0:
+                time_to_fail = random.expovariate(self.failure_rate / 1000.0) 
+                yield self.env.timeout(time_to_fail)
+                self.breakdown_count += 1
+                reqs = [self.resource.request() for _ in range(self.resource.capacity)]
+                yield simpy.AllOf(self.env, reqs)
+                yield self.env.timeout(self.mttr)
+                for req in reqs: self.resource.release(req)
+            else:
+                yield self.env.timeout(999999)
 
 class DigitalTwinPark:
     def __init__(self, env, nodes_config):
         self.env = env
         self.nodes = {}
-        # Khởi tạo dynamic nodes từ config
         for idx, row in nodes_config.iterrows():
             self.nodes[row["Tên Khu"]] = ServiceNode(env, row["Tên Khu"], row)
             
+        self.gate_qr = simpy.Resource(env, capacity=4) 
+        self.gate_booking = simpy.Resource(env, capacity=2)
+        self.gate_walkin = simpy.Resource(env, capacity=2)
+
         self.gate_revenue = 0
         self.current_visitors = 0
-        
-        # Tracking logs
-        self.visitor_paths = [] # Lưu luồng đi: [Visitor_ID, Node_From, Node_To]
-        self.snapshots = [] # Lưu vị trí khách tại mỗi khung giờ (cho Animation)
+        self.snapshots = [] 
 
     def capture_snapshot(self):
-        """Chụp ảnh vị trí khách mỗi 30 phút để làm Animation"""
+        """Chụp ảnh Heatmap mỗi 30 phút"""
         while True:
-            # Snapshot đơn giản hóa: Random vị trí dựa trên current visitors
-            # Trong thực tế, cần tracking từng object agent
             snapshot_time = min_to_time_str(self.env.now, OPEN_TIME)
             
-            # Ghi nhận trạng thái hàng đợi của từng node
+            visitors_in_nodes = 0
             for name, node in self.nodes.items():
-                queue_len = len(node.resource.queue)
-                processing = node.resource.count
+                # Với Heatmap, ta quan tâm tổng số người đang hiện diện ở khu vực đó
+                # Bao gồm cả người đang xếp hàng và người đang chơi/ngắm cảnh
+                count = len(node.resource.queue) + node.resource.count
+                visitors_in_nodes += count
+                
                 self.snapshots.append({
                     "Time": snapshot_time,
                     "Node": name,
-                    "Visitors": queue_len + processing,
-                    "Type": "Service"
+                    "Visitors": count
                 })
             
-            # Ghi nhận tại cổng/đường đi (giả lập số dư)
-            visitors_in_nodes = sum([len(n.resource.queue) + n.resource.count for n in self.nodes.values()])
+            # Khách đang đi lại giữa các khu (Walking)
             walking = max(0, self.current_visitors - visitors_in_nodes)
             self.snapshots.append({
                 "Time": snapshot_time,
-                "Node": "Walking/Path",
-                "Visitors": walking,
-                "Type": "Path"
+                "Node": "Đường đi/Khác",
+                "Visitors": walking
             })
             
-            yield self.env.timeout(30) # 30 phút chụp 1 lần
+            yield self.env.timeout(30) 
 
 def visitor_journey(env, visitor_id, park, is_combo, entry_time):
-    """Hành trình của khách hàng: Cổng -> Chọn Node -> Chơi -> (Lặp lại) -> Ra về"""
-    
-    # 1. Check-in Cổng
-    park.current_visitors += 1
-    if is_combo:
-        park.gate_revenue += TICKET_PRICE_COMBO
+    # --- 1. CHECK-IN ---
+    rand_gate = random.random() * 100
+    gate_delay = 0
+    if rand_gate < GATE_QR_PCT:
+        with park.gate_qr.request() as req:
+            yield req; yield env.timeout(0.5)
+    elif rand_gate < GATE_QR_PCT + GATE_BOOKING_PCT:
+        with park.gate_booking.request() as req:
+            yield req; yield env.timeout(2.0)
     else:
-        park.gate_revenue += TICKET_PRICE_ENTRY
+        with park.gate_walkin.request() as req:
+            yield req; yield env.timeout(5.0)
+
+    park.current_visitors += 1
+    if is_combo: park.gate_revenue += TICKET_PRICE_COMBO
+    else: park.gate_revenue += TICKET_PRICE_ENTRY
     
-    current_location = "Cổng vào"
-    
-    # Vòng lặp trải nghiệm (Dựa trên thời gian lưu trú)
-    # Khách sẽ đi khoảng 2-4 điểm dịch vụ trong thời gian lưu trú
+    # --- 2. DI CHUYỂN ---
     stay_duration = random.gauss(AVG_DWELL_TIME, 30)
     leave_time = entry_time + stay_duration
-    
-    # Danh sách các khu để chọn ngẫu nhiên
     node_names = list(park.nodes.keys())
     
     while env.now < leave_time and env.now < TOTAL_MINUTES:
-        # Chọn điểm đến tiếp theo (Random đơn giản, có thể nâng cấp thành logic độ hấp dẫn)
-        if not node_names: break
         target_name = random.choice(node_names)
         target_node = park.nodes[target_name]
         
-        # Di chuyển (Walking time)
-        walk_time = random.randint(5, 15)
-        yield env.timeout(walk_time)
+        # Di chuyển
+        yield env.timeout(random.randint(5, 15))
         
-        # LOGGING SANKEY: Di chuyển từ Node cũ -> Node mới
-        park.visitor_paths.append({
-            "Source": current_location, 
-            "Target": target_name, 
-            "Value": 1
-        })
-        current_location = target_name
-        
-        # -- QUY TRÌNH DỊCH VỤ --
-        # Kiểm tra hàng đợi (Balking)
+        # Vào khu vực
         if len(target_node.resource.queue) < target_node.queue_cap:
             with target_node.resource.request() as req:
-                yield req # Xếp hàng
-                yield env.timeout(target_node.service_time) # Sử dụng dịch vụ
+                yield req
+                yield env.timeout(target_node.service_time)
                 
-                # Tính doanh thu dịch vụ
-                # Logic: Khách Combo không mất tiền vé lẻ (trừ khi là Nhà hàng/Shop nếu logic quy định khác)
-                # Ở đây giả định: Combo free vé trò chơi, nhưng vẫn mất tiền ăn. 
-                # Để đơn giản: Combo free tất cả trừ khi Re-buy
+                # Trả tiền (nếu không phải vé Combo hoặc khu miễn phí)
+                if target_node.price > 0 and not is_combo:
+                    target_node.revenue += target_node.price
+                elif target_node.price > 0 and is_combo and random.random() < target_node.rebuy_prob:
+                     # Rebuy
+                     target_node.revenue += target_node.price
                 
-                # Logic thanh toán:
-                pay_amount = 0
-                if not is_combo:
-                    pay_amount = target_node.price
-                
-                target_node.revenue += pay_amount
                 target_node.visits += 1
-                
-                # -- LOGIC RE-LOOP (QUAY LẠI MUA THÊM) --
-                # Khách chơi xong, có muốn chơi lại ngay không?
-                if random.random() < target_node.rebuy_prob:
-                    # Quay lại xếp hàng
-                    yield env.timeout(2) # Đi vòng lại
-                    # Lần này chắc chắn phải trả tiền (Doanh thu lặp lại)
-                    target_node.revenue += target_node.price 
-                    # Log path quay lại chính nó
-                    park.visitor_paths.append({"Source": target_name, "Target": target_name, "Value": 1})
 
-        else:
-            # Bỏ qua do hàng dài
-            pass
-            
-    # Ra về
     park.current_visitors -= 1
-    park.visitor_paths.append({
-        "Source": current_location, 
-        "Target": "Ra về", 
-        "Value": 1
-    })
 
 def park_generator(env, park, total_visitors):
-    """Sinh khách dựa trên thời gian thực"""
-    # Ngưng nhận khách trước giờ đóng cửa
     stop_entry_time = TOTAL_MINUTES - STOP_ENTRY_MINUTES
-    
-    # Tốc độ sinh khách (Inter-arrival time)
-    # Giả lập phân phối hình chuông (đông trưa)
-    
     visitor_count = 0
     while env.now < stop_entry_time and visitor_count < total_visitors:
-        # Kiểm tra sức chứa
         if park.current_visitors < PARK_CAPACITY:
             visitor_count += 1
             is_combo = random.random() < (RATIO_COMBO / 100.0)
             env.process(visitor_journey(env, f"Vis_{visitor_count}", park, is_combo, env.now))
-        
-        # Random thời gian khách đến tiếp theo
-        # Đơn giản hóa: đến ngẫu nhiên
         yield env.timeout(random.expovariate(1.0 / (TOTAL_MINUTES/total_visitors)))
 
+def tour_generator(env, park, tours_df):
+    tours = tours_df.to_dict('records')
+    for tour in tours: tour['arrival_min'] = time_to_min(tour['Giờ đến'], OPEN_TIME)
+    tours.sort(key=lambda x: x['arrival_min'])
+    for tour in tours:
+        if tour['arrival_min'] > env.now:
+            yield env.timeout(tour['arrival_min'] - env.now)
+        for i in range(tour['Số lượng']):
+            env.process(visitor_journey(env, f"Tour", park, True, env.now))
+
 # ==========================================
-# 3. VISUALIZATION FUNCTIONS
+# 3. VISUALIZATION: HEATMAP
 # ==========================================
 
-def draw_sankey(path_data):
-    """Vẽ Sankey Diagram từ log di chuyển"""
-    if not path_data:
-        return None
-        
-    df = pd.DataFrame(path_data)
-    # Tổng hợp số lượng di chuyển giữa các cặp Source-Target
-    df_aggr = df.groupby(["Source", "Target"]).size().reset_index(name="Count")
-    
-    # Tạo danh sách node duy nhất
-    all_nodes = list(pd.concat([df_aggr["Source"], df_aggr["Target"]]).unique())
-    node_map = {name: i for i, name in enumerate(all_nodes)}
-    
-    link_source = df_aggr["Source"].map(node_map).tolist()
-    link_target = df_aggr["Target"].map(node_map).tolist()
-    link_value = df_aggr["Count"].tolist()
-    
-    fig = go.Figure(data=[go.Sankey(
-        node=dict(
-            pad=15, thickness=20, line=dict(color="black", width=0.5),
-            label=all_nodes,
-            color="blue"
-        ),
-        link=dict(
-            source=link_source, target=link_target, value=link_value
-        ))])
-    fig.update_layout(title_text="Luồng di chuyển của Khách hàng (Sankey Flow)", font_size=10)
-    return fig
-
-def draw_network_animation(nodes_list, snapshots):
-    """Vẽ Network Animation (Scatter Plot trên nền Graph)"""
+def draw_hourly_heatmap(snapshots):
+    """Vẽ biểu đồ nhiệt mật độ khách"""
     if not snapshots: return None
     
-    # 1. Tạo Graph Layout cố định
-    G = nx.Graph()
-    G.add_node("Cổng vào")
-    G.add_node("Ra về")
-    G.add_node("Walking/Path")
-    for n in nodes_list:
-        G.add_node(n["Tên Khu"])
+    df = pd.DataFrame(snapshots)
     
-    # Tạo liên kết giả để vẽ layout đẹp (Star topology)
-    for n in nodes_list:
-        G.add_edge("Cổng vào", "Walking/Path")
-        G.add_edge("Walking/Path", n["Tên Khu"])
-        G.add_edge(n["Tên Khu"], "Ra về")
+    # Pivot Table: Index=Node, Col=Time, Value=Visitors
+    df_pivot = df.pivot_table(index="Node", columns="Time", values="Visitors", aggfunc='sum').fillna(0)
     
-    pos = nx.spring_layout(G, seed=42)
+    # Sắp xếp lại thứ tự index để "Đường đi" xuống dưới cùng cho đẹp
+    # (Optional sorting logic)
     
-    # 2. Chuẩn bị DataFrame cho Plotly Animation
-    df_anim = pd.DataFrame(snapshots)
-    
-    # Map tọa độ vào DataFrame
-    df_anim["x"] = df_anim["Node"].map(lambda n: pos[n][0] if n in pos else 0)
-    df_anim["y"] = df_anim["Node"].map(lambda n: pos[n][1] if n in pos else 0)
-    
-    # Vẽ Bubble Chart Animation
-    fig = px.scatter(
-        df_anim, x="x", y="y", 
-        animation_frame="Time", animation_group="Node",
-        size="Visitors", color="Node", 
-        hover_name="Node", size_max=60,
-        range_x=[-1.5, 1.5], range_y=[-1.5, 1.5],
-        title="Mô phỏng Mật độ Khách theo Thời gian thực"
+    # Vẽ Heatmap
+    # Dùng thang màu RdYlGn_r (Đỏ - Vàng - Xanh đảo ngược): Đỏ là Đông, Xanh là Vắng
+    fig = px.imshow(
+        df_pivot,
+        labels=dict(x="Thời gian", y="Khu vực", color="Số lượng khách"),
+        aspect="auto",
+        color_continuous_scale="RdYlGn_r",
+        origin='lower'
+    )
+    fig.update_layout(
+        title="🔥 Bản đồ Nhiệt: Mật độ Khách theo Khu vực & Thời gian",
+        xaxis_title="Khung giờ trong ngày",
+        yaxis_title="Các khu vực (Dịch vụ & Thăm quan)"
     )
     
-    # Vẽ thêm các cạnh (Edges) nền tĩnh
-    edge_x = []
-    edge_y = []
-    for edge in G.edges():
-        x0, y0 = pos[edge[0]]
-        x1, y1 = pos[edge[1]]
-        edge_x.extend([x0, x1, None])
-        edge_y.extend([y0, y1, None])
-        
-    fig.add_trace(go.Scatter(
-        x=edge_x, y=edge_y, line=dict(width=1, color='#888'), hoverinfo='none', mode='lines'
-    ))
+    # Thêm text hiển thị số lượng lên ô (nếu muốn)
+    fig.update_traces(text=df_pivot.values, texttemplate="%{text:.0f}")
     
-    fig.layout.updatemenus[0].buttons[0].args[1]['frame']['duration'] = 500 # Tốc độ animation
     return fig
 
 # ==========================================
-# 4. RUN & DASHBOARD DISPLAY
+# 4. RUN
 # ==========================================
 
-if st.button("🚀 CHẠY MÔ PHỎNG CHI TIẾT", type="primary"):
-    # 1. Setup Environment
+if st.button("🚀 CHẠY MÔ PHỎNG HEATMAP", type="primary"):
     env = simpy.Environment()
     park = DigitalTwinPark(env, edited_nodes_df)
     
-    # 2. Register Processes
     env.process(park_generator(env, park, TOTAL_VISITORS))
-    env.process(park.capture_snapshot()) # Tracking cho animation
+    env.process(tour_generator(env, park, edited_tours_df))
+    env.process(park.capture_snapshot())
     
-    # 3. Run
-    with st.spinner("Đang xử lý hàng nghìn tác vụ mô phỏng..."):
+    with st.spinner("Đang tính toán bản đồ nhiệt..."):
         env.run(until=TOTAL_MINUTES)
     
-    # 4. Display Results
-    st.success("Mô phỏng hoàn tất!")
+    st.success("Hoàn tất!")
     
-    # --- TAB 1: FLOW VISUALIZATION (Yêu cầu mới) ---
-    tab_flow, tab_fin, tab_data = st.tabs(["🌊 Luồng Khách (Flow)", "💰 Doanh thu", "📋 Dữ liệu thô"])
+    tab_map, tab_fin, tab_risk = st.tabs(["🔥 Bản đồ Nhiệt (Heatmap)", "💰 Doanh thu", "⚠️ Rủi ro"])
     
-    with tab_flow:
-        st.write("### 1. Sankey Diagram: Hành trình Khách hàng")
-        st.caption("Biểu đồ thể hiện dòng chảy từ lúc vào cổng -> qua các khu dịch vụ -> ra về/quay lại.")
-        fig_sankey = draw_sankey(park.visitor_paths)
-        if fig_sankey:
-            st.plotly_chart(fig_sankey, use_container_width=True)
+    with tab_map:
+        st.write("### Phân bổ đám đông theo thời gian thực")
+        st.caption("Màu đỏ thể hiện khu vực đang quá tải hoặc tập trung đông người (bao gồm cả khách thăm quan).")
         
-        st.write("### 2. Network Animation: Mật độ theo Giờ")
-        st.caption("Bấm nút 'Play' bên dưới để xem sự di chuyển/tích tụ của khách theo thời gian.")
-        fig_anim = draw_network_animation(default_nodes, park.snapshots) # Lưu ý: default_nodes ở đây cần update từ edited_df nếu user sửa tên
-        if fig_anim:
-            st.plotly_chart(fig_anim, use_container_width=True)
+        fig_heat = draw_hourly_heatmap(park.snapshots)
+        if fig_heat: st.plotly_chart(fig_heat, use_container_width=True)
+        
+        st.write("#### Dữ liệu chi tiết từng khung giờ")
+        st.dataframe(pd.DataFrame(park.snapshots).pivot_table(index="Time", columns="Node", values="Visitors", aggfunc='sum').fillna(0))
 
-    # --- TAB 2: FINANCIALS ---
     with tab_fin:
-        # Tính tổng doanh thu dịch vụ phụ
         service_revenue = sum([n.revenue for n in park.nodes.values()])
         total_rev = park.gate_revenue + service_revenue
-        
         c1, c2, c3 = st.columns(3)
         c1.metric("Tổng Doanh Thu", f"{total_rev:,.0f} VNĐ")
         c2.metric("Doanh thu Vé Cổng", f"{park.gate_revenue:,.0f} VNĐ")
-        c3.metric("Doanh thu Dịch vụ Phụ", f"{service_revenue:,.0f} VNĐ")
+        c3.metric("Doanh thu Dịch vụ", f"{service_revenue:,.0f} VNĐ")
         
-        st.write("#### Chi tiết Doanh thu từng khu (Bao gồm Re-buy)")
-        rev_data = []
-        for name, node in park.nodes.items():
-            rev_data.append({"Khu vực": name, "Doanh thu": node.revenue, "Lượt khách": node.visits})
-        st.bar_chart(pd.DataFrame(rev_data).set_index("Khu vực")["Doanh thu"])
+        st.write("#### Chi tiết từng khu")
+        rev_data = [{"Khu vực": name, "Doanh thu": n.revenue, "Lượt khách": n.visits} for name, n in park.nodes.items()]
+        st.dataframe(pd.DataFrame(rev_data))
 
-    with tab_data:
-        st.dataframe(pd.DataFrame(park.visitor_paths).head(100))
-
-else:
-    st.info("Hãy cấu hình các khu dịch vụ ở bảng trên và bấm nút Chạy.")
+    with tab_risk:
+        risk_data = [{"Khu vực": name, "Số lần hỏng": n.breakdown_count, "MTTR (phút)": n.mttr} for name, n in park.nodes.items()]
+        fig_risk = px.bar(pd.DataFrame(risk_data), x="Khu vực", y="Số lần hỏng", title="Tần suất sự cố")
+        st.plotly_chart(fig_risk, use_container_width=True)

@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, time
 # ==========================================
 # 0. CẤU HÌNH & HÀM TIỆN ÍCH
 # ==========================================
-st.set_page_config(page_title="Digital Twin Park V9 (Fixed)", layout="wide")
+st.set_page_config(page_title="Digital Twin Park V10 (Final)", layout="wide")
 
 def time_to_min(time_obj, start_time_obj):
     delta = datetime.combine(datetime.today(), time_obj) - datetime.combine(datetime.today(), start_time_obj)
@@ -29,7 +29,7 @@ def min_to_hour_label(minutes, start_time_obj):
 # ==========================================
 # 1. INPUT MODULE
 # ==========================================
-st.title("🔥 Digital Twin V9: Analytics & Heatmap Restored")
+st.title("🔥 Digital Twin V10: Final Stable Version")
 st.markdown("---")
 
 with st.sidebar:
@@ -70,7 +70,7 @@ st.subheader("🛠️ 3. Cấu hình Khu vực & Sự cố")
 col_main1, col_main2 = st.columns([2, 1])
 
 with col_main1:
-    st.info("💡 Bạn có thể thử nhập 'Tỷ lệ hỏng' là 15 (tức 15%) để kiểm tra độ bền hệ thống.")
+    st.info("💡 Hệ thống sẽ tự động điều chỉnh nếu số nhân viên nhập vào < 1.")
     default_nodes = [
         {"Tên Khu": "Tàu lượn", "Loại": "Trò chơi", "Nhân viên": 3, "Tốc độ (phút)": 5, "Sức chứa hàng đợi": 30, "Giá/Chi tiêu (VNĐ)": 50000, "Tỷ lệ hỏng (%)": 15.0, "x": 100, "y": 100},
         {"Tên Khu": "Nhà hàng", "Loại": "Ăn uống", "Nhân viên": 5, "Tốc độ (phút)": 30, "Sức chứa hàng đợi": 50, "Giá/Chi tiêu (VNĐ)": 150000, "Tỷ lệ hỏng (%)": 0.0, "x": 400, "y": 300},
@@ -112,7 +112,10 @@ class ServiceNode:
             try: return float(val)
             except (ValueError, TypeError): return default
 
-        cap = safe_int(config.get("Nhân viên"), 5)
+        # [FIXED] Đảm bảo capacity luôn >= 1
+        raw_cap = safe_int(config.get("Nhân viên"), 5)
+        cap = max(1, raw_cap) 
+        
         if str(config.get("Loại")) == "Cảnh quan": cap = 9999
             
         self.resource = simpy.PriorityResource(env, capacity=cap)
@@ -192,11 +195,11 @@ class DigitalTwinPark:
                     "node": name,
                     "queue_len": q_len,
                     "visitors_in_service": node.resource.count,
-                    "total_density": q_len + node.resource.count, # Tổng số người tại node
+                    "total_density": q_len + node.resource.count, 
                     "capacity": node.queue_cap,
                     "status": status
                 })
-            yield self.env.timeout(10) # 10 phút chụp 1 lần
+            yield self.env.timeout(10) 
 
 def visitor_journey(env, visitor_id, park, is_combo, entry_time):
     v_type = 2 if is_combo else 1
@@ -428,13 +431,11 @@ def generate_report(park, open_time_obj):
         # 2. RESTORED HEATMAP
         st.markdown("#### 🔥 Biểu đồ Nhiệt: Mật độ Khách (Traffic Density)")
         if not df_snap.empty:
-            # Heatmap dựa trên 'total_density' (xếp hàng + đang chơi)
             pivot_density = df_snap.pivot_table(index='node', columns='Hour', values='total_density', aggfunc='mean').fillna(0)
-            
             fig_heat = px.imshow(
                 pivot_density,
                 aspect="auto",
-                color_continuous_scale="RdYlGn_r", # Đỏ là đông, Xanh là vắng
+                color_continuous_scale="RdYlGn_r", 
                 origin='lower',
                 title="Mật độ khách trung bình tại các điểm theo Giờ"
             )
@@ -472,12 +473,8 @@ def generate_report(park, open_time_obj):
         with c_op2:
             if park.incident_log:
                 df_inc = pd.DataFrame(park.incident_log)
-                
-                # [FIXED LỖI TẠI ĐÂY]
-                # Đổi tên cột rõ ràng sau khi reset_index để tránh lỗi 'names' is not column name
                 inc_counts = df_inc['node'].value_counts().reset_index()
-                inc_counts.columns = ['Node', 'Count'] # Ép tên cột rõ ràng
-                
+                inc_counts.columns = ['Node', 'Count'] 
                 fig_inc = px.pie(inc_counts, names='Node', values='Count', title="Phân bố Sự cố Hỏng hóc")
                 st.plotly_chart(fig_inc, use_container_width=True)
             else:

@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, time
 # ==========================================
 # 0. CẤU HÌNH & HÀM TIỆN ÍCH
 # ==========================================
-st.set_page_config(page_title="Digital Twin Park V8 (Stable)", layout="wide")
+st.set_page_config(page_title="Digital Twin Park V9 (Fixed)", layout="wide")
 
 def time_to_min(time_obj, start_time_obj):
     delta = datetime.combine(datetime.today(), time_obj) - datetime.combine(datetime.today(), start_time_obj)
@@ -29,7 +29,7 @@ def min_to_hour_label(minutes, start_time_obj):
 # ==========================================
 # 1. INPUT MODULE
 # ==========================================
-st.title("🔥 Digital Twin V8: Robust Simulation (High Failure Rate Support)")
+st.title("🔥 Digital Twin V9: Analytics & Heatmap Restored")
 st.markdown("---")
 
 with st.sidebar:
@@ -95,7 +95,7 @@ with col_main2:
     )
 
 # ==========================================
-# 2. SIMULATION ENGINE (UPDATED FOR STABILITY)
+# 2. SIMULATION ENGINE
 # ==========================================
 
 class ServiceNode:
@@ -104,7 +104,6 @@ class ServiceNode:
         self.name = name
         self.park = park_ref 
         
-        # --- HÀM LÀM SẠCH DỮ LIỆU (Tránh lỗi None/String) ---
         def safe_int(val, default):
             try: return int(float(val))
             except (ValueError, TypeError): return default
@@ -113,11 +112,9 @@ class ServiceNode:
             try: return float(val)
             except (ValueError, TypeError): return default
 
-        # Lấy dữ liệu an toàn
         cap = safe_int(config.get("Nhân viên"), 5)
         if str(config.get("Loại")) == "Cảnh quan": cap = 9999
             
-        # [QUAN TRỌNG] Dùng PriorityResource để hỗ trợ thợ sửa chữa chen hàng
         self.resource = simpy.PriorityResource(env, capacity=cap)
         
         self.service_time = safe_int(config.get("Tốc độ (phút)"), 10)
@@ -128,23 +125,19 @@ class ServiceNode:
         self.x = safe_int(config.get("x"), random.randint(50, 750))
         self.y = safe_int(config.get("y"), random.randint(50, 550))
         
-        # Breakdown Process
         if self.failure_rate > 0:
             self.env.process(self.breakdown_control())
 
     def breakdown_control(self):
-        """Mô phỏng hỏng hóc với Priority=0 (Cao nhất)"""
         while True:
             if self.failure_rate <= 0:
                 yield self.env.timeout(999999)
             else:
                 try:
-                    # Lambda = Rate / 1000. Ví dụ 15% -> 0.015 -> MTBF ~ 66 phút
                     rate = self.failure_rate / 1000.0
                     time_to_fail = random.expovariate(rate)
                     yield self.env.timeout(time_to_fail)
                     
-                    # Ghi log sự cố
                     self.park.incident_log.append({
                         "time": self.env.now,
                         "node": self.name,
@@ -152,12 +145,11 @@ class ServiceNode:
                         "duration": 30 
                     })
                     
-                    # [CHEN NGANG] Request với priority=0 (Ưu tiên cao hơn khách hàng)
                     with self.resource.request(priority=0) as req:
                         yield req
-                        yield self.env.timeout(30) # Sửa mất 30 phút
+                        yield self.env.timeout(30)
                 except Exception:
-                    yield self.env.timeout(100) # Fallback nếu lỗi tính toán
+                    yield self.env.timeout(100)
 
 class DigitalTwinPark:
     def __init__(self, env, nodes_config):
@@ -191,18 +183,20 @@ class DigitalTwinPark:
             for name, node in self.nodes.items():
                 q_len = len(node.resource.queue)
                 status = "Normal"
-                # Logic xác định trạng thái
                 if q_len >= node.queue_cap: status = "Overload"
                 elif node.resource.count == node.resource.capacity and q_len > 0: status = "Busy"
                 
+                # Snapshot cho Heatmap
                 self.snapshot_log.append({
                     "time": self.env.now,
                     "node": name,
                     "queue_len": q_len,
+                    "visitors_in_service": node.resource.count,
+                    "total_density": q_len + node.resource.count, # Tổng số người tại node
                     "capacity": node.queue_cap,
                     "status": status
                 })
-            yield self.env.timeout(10) 
+            yield self.env.timeout(10) # 10 phút chụp 1 lần
 
 def visitor_journey(env, visitor_id, park, is_combo, entry_time):
     v_type = 2 if is_combo else 1
@@ -250,12 +244,10 @@ def visitor_journey(env, visitor_id, park, is_combo, entry_time):
         if len(target_node.resource.queue) < target_node.queue_cap:
             arrival_ts = env.now
             
-            # [QUAN TRỌNG] Priority=1 (Thấp hơn thợ sửa chữa là 0) -> Nhường đường
             with target_node.resource.request(priority=1) as req:
                 yield req 
                 yield env.timeout(target_node.service_time)
                 
-                # Payment
                 spent = 0
                 if target_node.price > 0:
                     if not is_combo: spent = target_node.price
@@ -358,11 +350,9 @@ def render_animation(movements, nodes_df, open_hour):
             function draw() {{
                 ctx.fillStyle = '#111827'; ctx.fillRect(0, 0, canvas.width, canvas.height);
                 
-                // Draw Gates
                 ctx.fillStyle = '#10B981'; ctx.fillRect(330, 480, 40, 10); ctx.fillText("IN", 340, 475);
                 ctx.fillStyle = '#EF4444'; ctx.fillRect(430, 480, 40, 10); ctx.fillText("OUT", 435, 475);
 
-                // Draw Nodes
                 nodes.forEach(n => {{
                     ctx.fillStyle = '#374151';
                     if (n['Loại'] === 'Ăn uống') ctx.fillStyle = '#92400e';
@@ -372,7 +362,6 @@ def render_animation(movements, nodes_df, open_hour):
                     ctx.fillText(n['Tên Khu'], n.x, y + 25);
                 }});
                 
-                // Draw Agents
                 const active = movements.filter(m => currentTime >= m.start && currentTime <= m.end);
                 active.forEach(m => {{
                     const duration = m.end - m.start;
@@ -400,7 +389,7 @@ def render_animation(movements, nodes_df, open_hour):
     components.html(html_code, height=600)
 
 # ==========================================
-# 4. REPORTING & CHARTS
+# 4. REPORTING & CHARTS (FIXED)
 # ==========================================
 def generate_report(park, open_time_obj):
     st.markdown("---")
@@ -416,28 +405,44 @@ def generate_report(park, open_time_obj):
     if not df_rev.empty: df_rev['Hour'] = df_rev['time'].apply(lambda x: min_to_hour_label(x, open_time_obj))
     if not df_snap.empty: df_snap['Hour'] = df_snap['time'].apply(lambda x: min_to_hour_label(x, open_time_obj))
 
-    tab_flow, tab_rev, tab_ops = st.tabs(["👥 Lưu Lượng", "💰 Doanh Thu", "⚠️ Vận Hành & Sự Cố"])
+    tab_flow, tab_rev, tab_ops = st.tabs(["👥 Lưu Lượng & Heatmap", "💰 Doanh Thu", "⚠️ Sự Cố & Quá Tải"])
 
+    # --- TAB 1: TRAFFIC & HEATMAP ---
     with tab_flow:
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            if not df_entry.empty and not df_exit.empty:
-                entry_counts = df_entry.groupby('Hour').size().reset_index(name='Vào')
-                exit_counts = df_exit.groupby('Hour').size().reset_index(name='Ra')
-                df_traffic = pd.merge(entry_counts, exit_counts, on='Hour', how='outer').fillna(0)
-                
-                fig_traffic = go.Figure()
-                fig_traffic.add_trace(go.Bar(x=df_traffic['Hour'], y=df_traffic['Vào'], name='Vào', marker_color='#10B981'))
-                fig_traffic.add_trace(go.Bar(x=df_traffic['Hour'], y=df_traffic['Ra'], name='Ra', marker_color='#EF4444'))
-                fig_traffic.update_layout(title="Lượng khách Vào/Ra theo khung giờ", xaxis_title="Giờ", barmode='group')
-                st.plotly_chart(fig_traffic, use_container_width=True)
-            else:
-                st.warning("Chưa có dữ liệu.")
-        with col2:
-            if not df_entry.empty:
-                st.metric("Tổng lượt vào", f"{len(df_entry):,}")
-                st.metric("Tổng lượt ra", f"{len(df_exit):,}")
+        st.subheader("Lưu lượng và Mật độ khách")
+        
+        # 1. Traffic Chart
+        if not df_entry.empty and not df_exit.empty:
+            entry_counts = df_entry.groupby('Hour').size().reset_index(name='Vào')
+            exit_counts = df_exit.groupby('Hour').size().reset_index(name='Ra')
+            df_traffic = pd.merge(entry_counts, exit_counts, on='Hour', how='outer').fillna(0)
+            
+            fig_traffic = go.Figure()
+            fig_traffic.add_trace(go.Bar(x=df_traffic['Hour'], y=df_traffic['Vào'], name='Vào', marker_color='#10B981'))
+            fig_traffic.add_trace(go.Bar(x=df_traffic['Hour'], y=df_traffic['Ra'], name='Ra', marker_color='#EF4444'))
+            fig_traffic.update_layout(title="Lượng khách Vào/Ra theo khung giờ", xaxis_title="Giờ", barmode='group')
+            st.plotly_chart(fig_traffic, use_container_width=True)
+        else:
+            st.warning("Chưa có dữ liệu vào/ra.")
 
+        # 2. RESTORED HEATMAP
+        st.markdown("#### 🔥 Biểu đồ Nhiệt: Mật độ Khách (Traffic Density)")
+        if not df_snap.empty:
+            # Heatmap dựa trên 'total_density' (xếp hàng + đang chơi)
+            pivot_density = df_snap.pivot_table(index='node', columns='Hour', values='total_density', aggfunc='mean').fillna(0)
+            
+            fig_heat = px.imshow(
+                pivot_density,
+                aspect="auto",
+                color_continuous_scale="RdYlGn_r", # Đỏ là đông, Xanh là vắng
+                origin='lower',
+                title="Mật độ khách trung bình tại các điểm theo Giờ"
+            )
+            st.plotly_chart(fig_heat, use_container_width=True)
+        else:
+            st.info("Chưa đủ dữ liệu để vẽ Heatmap.")
+
+    # --- TAB 2: REVENUE ---
     with tab_rev:
         if not df_rev.empty:
             c1, c2 = st.columns(2)
@@ -454,6 +459,7 @@ def generate_report(park, open_time_obj):
         else:
             st.warning("Chưa có doanh thu.")
 
+    # --- TAB 3: OPERATIONS (FIXED PIE CHART ERROR) ---
     with tab_ops:
         c_op1, c_op2 = st.columns(2)
         with c_op1:
@@ -466,24 +472,22 @@ def generate_report(park, open_time_obj):
         with c_op2:
             if park.incident_log:
                 df_inc = pd.DataFrame(park.incident_log)
-                inc_counts = df_inc['node'].value_counts().reset_index(name='Count')
-                fig_inc = px.pie(inc_counts, names='index', values='Count', title="Phân bố Sự cố Hỏng hóc")
+                
+                # [FIXED LỖI TẠI ĐÂY]
+                # Đổi tên cột rõ ràng sau khi reset_index để tránh lỗi 'names' is not column name
+                inc_counts = df_inc['node'].value_counts().reset_index()
+                inc_counts.columns = ['Node', 'Count'] # Ép tên cột rõ ràng
+                
+                fig_inc = px.pie(inc_counts, names='Node', values='Count', title="Phân bố Sự cố Hỏng hóc")
                 st.plotly_chart(fig_inc, use_container_width=True)
             else:
                 st.success("Không có sự cố nào xảy ra.")
-                
-        if not df_snap.empty:
-            st.write("#### Heatmap: Mức độ xếp hàng trung bình")
-            pivot = df_snap.pivot_table(index='node', columns='Hour', values='queue_len', aggfunc='mean').fillna(0)
-            fig_hm = px.imshow(pivot, aspect="auto", color_continuous_scale="OrRd", origin='lower')
-            st.plotly_chart(fig_hm, use_container_width=True)
 
 # ==========================================
 # 5. RUN
 # ==========================================
 
 if st.button("🚀 CHẠY MÔ PHỎNG & PHÂN TÍCH", type="primary"):
-    # CLEAN DATA TRƯỚC KHI CHẠY
     clean_nodes_df = edited_nodes_df.fillna(0)
     
     env = simpy.Environment()

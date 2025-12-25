@@ -408,7 +408,7 @@ def generate_report(park, open_time_obj):
     if not df_rev.empty: df_rev['Hour'] = df_rev['time'].apply(lambda x: min_to_hour_label(x, open_time_obj))
     if not df_snap.empty: df_snap['Hour'] = df_snap['time'].apply(lambda x: min_to_hour_label(x, open_time_obj))
 
-    tab_flow, tab_rev, tab_ops = st.tabs(["👥 Lưu Lượng & Heatmap", "💰 Doanh Thu", "⚠️ Sự Cố & Quá Tải"])
+    tab_flow, tab_rev, tab_ops = st.tabs(["Lưu Lượng & Heatmap", "Doanh Thu", "Sự Cố & Quá Tải"])
 
     # --- TAB 1: TRAFFIC & HEATMAP ---
     with tab_flow:

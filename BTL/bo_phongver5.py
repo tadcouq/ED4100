@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, time
 # ==========================================
 # 0. CẤU HÌNH & HÀM TIỆN ÍCH
 # ==========================================
-st.set_page_config(page_title="Digital Twin Park V10 (Final)", layout="wide")
+st.set_page_config(page_title="Mô phỏng hệ thống bán vé tham quan tại khu vui chơi", layout="wide")
 
 def time_to_min(time_obj, start_time_obj):
     delta = datetime.combine(datetime.today(), time_obj) - datetime.combine(datetime.today(), start_time_obj)
@@ -29,11 +29,11 @@ def min_to_hour_label(minutes, start_time_obj):
 # ==========================================
 # 1. INPUT MODULE
 # ==========================================
-st.title("🔥 Digital Twin V10: Final Stable Version")
+st.title("Mô phỏng hệ thống bán vé tham quan tại khu vui chơi")
 st.markdown("---")
 
 with st.sidebar:
-    st.header("⚙️ 1. Cấu hình Vận hành")
+    st.header("1. Cấu hình Vận hành")
     
     col_t1, col_t2 = st.columns(2)
     OPEN_TIME = col_t1.time_input("Giờ Mở cửa", value=datetime.strptime("08:00", "%H:%M").time())
@@ -48,7 +48,7 @@ with st.sidebar:
     TOTAL_VISITORS = st.number_input("Tổng khách dự kiến", value=800)
 
     st.markdown("---")
-    st.header("🎫 2. Vé & Cổng")
+    st.header("2. Vé & Cổng")
     
     col_v1, col_v2 = st.columns(2)
     RATIO_COMBO = col_v1.slider("Tỷ lệ Vé Combo (%)", 0, 100, 40)
@@ -65,12 +65,12 @@ with st.sidebar:
     GATE_WALKIN_PCT = col_g3.number_input("% Tại quầy", value=20)
 
 # --- MAIN AREA ---
-st.subheader("🛠️ 3. Cấu hình Khu vực & Sự cố")
+st.subheader("3. Cấu hình Khu vực & Sự cố")
 
 col_main1, col_main2 = st.columns([2, 1])
 
 with col_main1:
-    st.info("💡 Hệ thống sẽ tự động điều chỉnh nếu số nhân viên nhập vào < 1.")
+    st.info("Hệ thống sẽ tự động điều chỉnh nếu số nhân viên nhập vào < 1.")
     default_nodes = [
         {"Tên Khu": "Tàu lượn", "Loại": "Trò chơi", "Nhân viên": 3, "Tốc độ (phút)": 5, "Sức chứa hàng đợi": 30, "Giá/Chi tiêu (VNĐ)": 50000, "Tỷ lệ hỏng (%)": 15.0, "x": 100, "y": 100},
         {"Tên Khu": "Nhà hàng", "Loại": "Ăn uống", "Nhân viên": 5, "Tốc độ (phút)": 30, "Sức chứa hàng đợi": 50, "Giá/Chi tiêu (VNĐ)": 150000, "Tỷ lệ hỏng (%)": 0.0, "x": 400, "y": 300},
@@ -396,7 +396,7 @@ def render_animation(movements, nodes_df, open_hour):
 # ==========================================
 def generate_report(park, open_time_obj):
     st.markdown("---")
-    st.header("📊 BÁO CÁO PHÂN TÍCH VẬN HÀNH (Analytics)")
+    st.header("BÁO CÁO PHÂN TÍCH VẬN HÀNH")
     
     df_entry = pd.DataFrame(park.entry_log)
     df_exit = pd.DataFrame(park.exit_log)
@@ -429,7 +429,7 @@ def generate_report(park, open_time_obj):
             st.warning("Chưa có dữ liệu vào/ra.")
 
         # 2. RESTORED HEATMAP
-        st.markdown("#### 🔥 Biểu đồ Nhiệt: Mật độ Khách (Traffic Density)")
+        st.markdown("#### Biểu đồ Nhiệt: Mật độ Khách (Traffic Density)")
         if not df_snap.empty:
             pivot_density = df_snap.pivot_table(index='node', columns='Hour', values='total_density', aggfunc='mean').fillna(0)
             fig_heat = px.imshow(
@@ -484,7 +484,7 @@ def generate_report(park, open_time_obj):
 # 5. RUN
 # ==========================================
 
-if st.button("🚀 CHẠY MÔ PHỎNG & PHÂN TÍCH", type="primary"):
+if st.button("CHẠY MÔ PHỎNG & PHÂN TÍCH", type="primary"):
     clean_nodes_df = edited_nodes_df.fillna(0)
     
     env = simpy.Environment()
